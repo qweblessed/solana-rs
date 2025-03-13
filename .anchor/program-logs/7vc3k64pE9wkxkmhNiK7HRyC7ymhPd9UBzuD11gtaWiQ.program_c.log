@@ -1,0 +1,15 @@
+Streaming transaction logs mentioning 7vc3k64pE9wkxkmhNiK7HRyC7ymhPd9UBzuD11gtaWiQ. Confirmed commitment
+Transaction executed in slot 3:
+  Signature: 34f1ToRQo1e82FHcVZZBi2t49dBjePrfJ7Xk8KtwJhUaYCz9bbJs5RpVpq4VGqAyhafNexAKTMw3Hq3bnxhmha66
+  Status: Ok
+  Log Messages:
+    Program 7vc3k64pE9wkxkmhNiK7HRyC7ymhPd9UBzuD11gtaWiQ invoke [1]
+    Program log: Instruction: CreateAndJoinPool
+    Program 11111111111111111111111111111111 invoke [2]
+    Program 11111111111111111111111111111111 success
+    Program log: Pool created by 7vc3k64pE9wkxkmhNiK7HRyC7ymhPd9UBzuD11gtaWiQ at timestamp 1741859814
+    Program log: PDA Address: BYfmHAEkonFWmQnNXEWYmY9e87VyBuZy6Uc5QeFCckuz
+    Program 11111111111111111111111111111111 invoke [2]
+    Program 11111111111111111111111111111111 success
+    Program 7vc3k64pE9wkxkmhNiK7HRyC7ymhPd9UBzuD11gtaWiQ consumed 38031 of 200000 compute units
+    Program 7vc3k64pE9wkxkmhNiK7HRyC7ymhPd9UBzuD11gtaWiQ success
