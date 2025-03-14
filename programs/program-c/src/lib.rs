@@ -1,15 +1,61 @@
-use anchor_lang::prelude::*;
+use anchor_lang::{
+    prelude::*,
+    solana_program::{instruction::Instruction, program::invoke_signed},
+};
+use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
+use jupiter_aggregator::program::Jupiter;
+use std::str::FromStr;
+mod instructions;
 
 declare_id!("7vc3k64pE9wkxkmhNiK7HRyC7ymhPd9UBzuD11gtaWiQ");
+declare_program!(jupiter_aggregator);
+
+const VAULT_SEED: &[u8] = b"vault";
+
+pub fn jupiter_program_id() -> Pubkey {
+    Pubkey::from_str("JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4").unwrap()
+}
 
 #[program]
-pub mod program_c {
-    use anchor_lang::solana_program::{
-        program::{invoke},
-        system_instruction,
-    };
-
+pub mod program_c {    
     use super::*;
+
+    pub fn swap(ctx: Context<Swap>, data: Vec<u8>) -> Result<()> {
+        require_keys_eq!(*ctx.accounts.jupiter_program.key, jupiter_program_id());
+
+        let accounts: Vec<AccountMeta> = ctx
+            .remaining_accounts
+            .iter()
+            .map(|acc| {
+                let is_signer = acc.key == &ctx.accounts.vault.key();
+                AccountMeta {
+                    pubkey: *acc.key,
+                    is_signer,
+                    is_writable: acc.is_writable,
+                }
+            })
+            .collect();
+
+        let accounts_infos: Vec<AccountInfo> = ctx
+            .remaining_accounts
+            .iter()
+            .map(|acc| AccountInfo { ..acc.clone() })
+            .collect();
+
+        let signer_seeds: &[&[&[u8]]] = &[&[VAULT_SEED, &[ctx.bumps.vault]]];
+
+        invoke_signed(
+            &Instruction {
+                program_id: ctx.accounts.jupiter_program.key(),
+                accounts,
+                data,
+            },
+            &accounts_infos,
+            signer_seeds,
+        )?;
+
+        Ok(())
+    }
 
     pub fn create_and_join_pool(ctx: Context<CreatePool>) -> Result<()> {
         let pool = &mut ctx.accounts.pool;
@@ -18,74 +64,46 @@ pub mod program_c {
         pool.created_at = Clock::get()?.unix_timestamp as u64;
         pool.participants = Vec::new();
 
-        msg!("Pool created by {} at timestamp {}", pool.creator, pool.created_at);
-
-        let pool_address = ctx.accounts.pool.key();
-        let signer_address = ctx.accounts.signer.key();
-   
-        let seeds = &[b"pool_pda", pool_address.as_ref(), signer_address.as_ref()];
-        let (pda_address, _bump_seed) = Pubkey::find_program_address(seeds, &ctx.program_id);
-        msg!("PDA Address: {}", pda_address);
-
-        let instruction = system_instruction::transfer(
-            &ctx.accounts.signer.key(),
-            &pda_address,
-            1_000_000_000,
+        msg!(
+            "Pool created by {} at timestamp {}",
+            pool.creator,
+            pool.created_at
         );
 
-        let account_infos = [
-            ctx.accounts.pda_account.to_account_info(),
-            ctx.accounts.signer.to_account_info(),
-            ctx.accounts.system_program.to_account_info(),
-        ];
-        
-        invoke(
-            &instruction,
-            &account_infos,
+        instructions::deposit_funds::deposit_funds(
+            &ctx.accounts.signer,
+            &ctx.accounts.pda_account,
+            &ctx.accounts.system_program,
+            &ctx.accounts.pool.key(),
+            ctx.program_id,
         )?;
+
         Ok(())
     }
 
     pub fn join_pool(ctx: Context<JoinPool>) -> Result<()> {
         let pool = &mut ctx.accounts.pool;
 
-        // Check if the pool is full (limit is 10 participants)
+        
         if pool.participants.len() >= 10 {
-            return Err(ProgramError::Custom(0).into());  // Custom error: Pool is full
+            return Err(ProgramError::Custom(0).into()); 
         }
 
-        // Add the new participant
         pool.participants.push(ctx.accounts.signer.key());
 
         msg!("{} joined the pool", ctx.accounts.signer.key());
 
-        // Transfer funds to the PDA
-        let pool_address = ctx.accounts.pool.key();
-        let signer_address = ctx.accounts.signer.key();
-   
-        let seeds = &[b"pool_pda", pool_address.as_ref(), signer_address.as_ref()];
-        let (pda_address, _bump_seed) = Pubkey::find_program_address(seeds, &ctx.program_id);
-        msg!("PDA Address: {}", pda_address);
+        instructions::deposit_funds::deposit_funds(
+            &ctx.accounts.signer,
+            &ctx.accounts.pda_account,
+            &ctx.accounts.system_program,
+            &ctx.accounts.pool.key(),
+            ctx.program_id,
+        )?;
 
-        let instruction = system_instruction::transfer(
-            &ctx.accounts.signer.key(),
-            &pda_address,
-            1_000_000_000,
-        );
-
-        let account_infos = [
-            ctx.accounts.pda_account.to_account_info(),
-            ctx.accounts.signer.to_account_info(),
-            ctx.accounts.system_program.to_account_info(),
-        ];
-        
-        invoke(&instruction, &account_infos)?;
         Ok(())
     }
-
-
 }
-
 
 #[derive(Accounts)]
 pub struct CreatePool<'info> {
@@ -95,7 +113,7 @@ pub struct CreatePool<'info> {
         mut,
         seeds = [b"pool_pda", pool.key().as_ref(), signer.key().as_ref()],
         bump
-    )]    
+    )]
     /// CHECK: qwe
     pub pda_account: AccountInfo<'info>,
     #[account(mut)]
@@ -124,4 +142,38 @@ pub struct Pool {
     pub creator: Pubkey, // Now the creator is the program's public key
     pub created_at: u64, // Timestamp of pool creation
     pub participants: Vec<Pubkey>,
+}
+
+
+#[derive(Accounts)]
+pub struct Swap<'info> {
+    pub input_mint: InterfaceAccount<'info, Mint>,
+    pub input_mint_program: Interface<'info, TokenInterface>,
+    pub output_mint: InterfaceAccount<'info, Mint>,
+    pub output_mint_program: Interface<'info, TokenInterface>,
+
+    #[account(
+      mut,
+      seeds=[VAULT_SEED],
+      bump
+    )]
+    pub vault: SystemAccount<'info>,
+
+    #[account(
+      mut,
+      associated_token::mint=input_mint,
+      associated_token::authority=vault,
+      associated_token::token_program=input_mint_program,
+    )]
+    pub vault_input_token_account: InterfaceAccount<'info, TokenAccount>,
+
+    #[account(
+      mut,
+      associated_token::mint=output_mint,
+      associated_token::authority=vault,
+      associated_token::token_program=output_mint_program,
+    )]
+    pub vault_output_token_account: InterfaceAccount<'info, TokenAccount>,
+
+    pub jupiter_program: Program<'info, Jupiter>,
 }

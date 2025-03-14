@@ -18,3 +18,4 @@ wallet = "~/.config/solana/id.json"
 
 [scripts]
 test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
+deploy-local = "solana program deploy target/deploy/program_c.so --program-id target/deploy/program_c.json -C ~/.config/solana/cli/local.yml --use-rpc --with-compute-unit-price 10"
